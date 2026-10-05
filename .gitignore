@@ -1,3 +1,7 @@
 *.db
+# Session keys, API token, message history and downloaded media
+whatsapp-bridge/store/
+# Files waiting to be sent
+whatsapp-bridge/outbox/
 claude_desktop_config.json
 whatsapp.log

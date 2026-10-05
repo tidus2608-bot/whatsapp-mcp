@@ -186,6 +186,9 @@ def send_message(
 @mcp.tool()
 def send_file(recipient: str, media_path: str) -> Dict[str, Any]:
     """Send a file such as a picture, raw audio, video or document via WhatsApp to the specified recipient. For group messages use the JID.
+
+    The bridge only sends files from its whatsapp-bridge/outbox folder, plus any folders listed in
+    the bridge's WHATSAPP_MEDIA_DIRS setting; other paths are refused.
     
     Args:
         recipient: The recipient - either a phone number with country code but no + or other symbols,
@@ -206,6 +209,9 @@ def send_file(recipient: str, media_path: str) -> Dict[str, Any]:
 @mcp.tool()
 def send_audio_message(recipient: str, media_path: str) -> Dict[str, Any]:
     """Send any audio file as a WhatsApp audio message to the specified recipient. For group messages use the JID. If it errors due to ffmpeg not being installed, use send_file instead.
+
+    A .ogg file must be in the bridge's whatsapp-bridge/outbox folder (or a folder listed in the
+    bridge's WHATSAPP_MEDIA_DIRS setting). Other audio formats are converted into the outbox first.
     
     Args:
         recipient: The recipient - either a phone number with country code but no + or other symbols,
@@ -232,18 +238,18 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing success status, a status message, and the file path if successful
     """
-    file_path = whatsapp_download_media(message_id, chat_jid)
+    success, message, file_path = whatsapp_download_media(message_id, chat_jid)
     
-    if file_path:
+    if success:
         return {
             "success": True,
-            "message": "Media downloaded successfully",
+            "message": message,
             "file_path": file_path
         }
     else:
         return {
             "success": False,
-            "message": "Failed to download media"
+            "message": message
         }
 
 if __name__ == "__main__":
