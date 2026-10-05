@@ -2,7 +2,7 @@
 
 This is a Model Context Protocol (MCP) server for WhatsApp.
 
-With this you can search and read your personal Whatsapp messages (including images, videos, documents, and audio messages), search your contacts and send messages to either individuals or groups. You can also send media files including images, videos, documents, and audio messages.
+With this you can search and read your personal Whatsapp messages (including images, videos, documents, and audio messages), and search your contacts. This server is **read-only**: it does not expose any tools for sending messages or files.
 
 It connects to your **personal WhatsApp account** directly via the Whatsapp web multidevice API (using the [whatsmeow](https://github.com/tulir/whatsmeow) library). All your messages are stored locally in a SQLite database and only sent to an LLM (such as Claude) when the agent accesses them through tools (which you control).
 
@@ -22,7 +22,6 @@ Here's an example of what you can do when it's connected to Claude.
 - Python 3.6+
 - Anthropic Claude Desktop app (or Cursor)
 - UV (Python package manager), install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- FFmpeg (_optional_) - Only needed for audio messages. If you want to send audio files as playable WhatsApp voice messages, they must be in `.ogg` Opus format. With FFmpeg installed, the MCP server will automatically convert non-Opus audio files. Without FFmpeg, you can still send raw audio files using the `send_file` tool.
 
 ### Steps
 
@@ -112,7 +111,7 @@ This application consists of two main components:
 
 1. **Go WhatsApp Bridge** (`whatsapp-bridge/`): A Go application that connects to WhatsApp's web API, handles authentication via QR code, and stores message history in SQLite. It serves as the bridge between WhatsApp and the MCP server.
 
-2. **Python MCP Server** (`whatsapp-mcp-server/`): A Python server implementing the Model Context Protocol (MCP), which provides standardized tools for Claude to interact with WhatsApp data and send/receive messages.
+2. **Python MCP Server** (`whatsapp-mcp-server/`): A Python server implementing the Model Context Protocol (MCP), which provides standardized, read-only tools for Claude to search and read your WhatsApp data.
 
 ### Data Storage
 
@@ -136,25 +135,11 @@ Claude can access the following tools to interact with WhatsApp:
 - **get_contact_chats**: List all chats involving a specific contact
 - **get_last_interaction**: Get the most recent message with a contact
 - **get_message_context**: Retrieve context around a specific message
-- **send_message**: Send a WhatsApp message to a specified phone number or group JID
-- **send_file**: Send a file (image, video, raw audio, document) to a specified recipient
-- **send_audio_message**: Send an audio file as a WhatsApp voice message (requires the file to be an .ogg opus file or ffmpeg must be installed)
 - **download_media**: Download media from a WhatsApp message and get the local file path
 
+The MCP server does not provide tools for sending messages, files, or voice messages.
+
 ### Media Handling Features
-
-The MCP server supports both sending and receiving various media types:
-
-#### Media Sending
-
-You can send various media types to your WhatsApp contacts:
-
-- **Where files must be**: For safety, the bridge only sends files from the `whatsapp-bridge/outbox` folder (created when the bridge starts). Copy files there before asking Claude to send them, or allow more folders with `WHATSAPP_MEDIA_DIRS` (see [Security](#security)).
-- **Images, Videos, Documents**: Use the `send_file` tool to share any supported media type.
-- **Voice Messages**: Use the `send_audio_message` tool to send audio files as playable WhatsApp voice messages.
-  - For optimal compatibility, audio files should be in `.ogg` Opus format.
-  - With FFmpeg installed, the system will automatically convert other audio formats (MP3, WAV, etc.) to the required format.
-  - Without FFmpeg, you can still send raw audio files using the `send_file` tool, but they won't appear as playable voice messages.
 
 #### Media Downloading
 
@@ -162,7 +147,7 @@ By default, just the metadata of the media is stored in the local database. The 
 
 ## Security
 
-The bridge exposes a small REST API that the MCP server uses to send messages and download media. It is locked down as follows:
+The bridge exposes a small REST API. The MCP server only uses it to download media, but the bridge's API itself still contains endpoints for sending messages and files, so it is not read-only on its own. It is locked down as follows:
 
 - **Local only**: the API listens on `127.0.0.1:8080`, so other machines on your network cannot reach it.
 - **Token required**: on first start the bridge creates a random token in `whatsapp-bridge/store/api_token` (readable only by your user account). The MCP server reads it from there and sends it with every request; requests without it are refused. To use your own token instead, set the `WHATSAPP_API_TOKEN` environment variable to the same value for both the bridge and the MCP server (for the MCP server, add it under `"env"` in your Claude Desktop / Cursor config).
@@ -176,7 +161,7 @@ The bridge exposes a small REST API that the MCP server uses to send messages an
   Files inside `whatsapp-bridge/store` (your session keys and message history) are never sent, even if a wider folder is allowed.
 - **Downloaded file names are sanitised**: media is saved as `<message id>_<name>` inside the chat's folder, so a file name chosen by the sender cannot place a file elsewhere on your computer.
 
-These measures do not stop prompt injection (see the caution at the top): a message you receive can still try to instruct Claude to send messages. Review what Claude proposes to send before approving tool calls.
+These measures do not stop prompt injection (see the caution at the top): a message you receive can still try to instruct Claude to misuse its tools. Because the MCP server has no send tools, Claude cannot send messages through it.
 
 ## Technical Details
 
@@ -184,14 +169,12 @@ These measures do not stop prompt injection (see the caution at the top): a mess
 2. The MCP server queries the Go bridge for WhatsApp data or directly to the SQLite database
 3. The Go accesses the WhatsApp API and keeps the SQLite database up to date
 4. Data flows back through the chain to Claude
-5. When sending messages, the request flows from Claude through the MCP server to the Go bridge and to WhatsApp
 
 ## Troubleshooting
 
 - If you encounter permission issues when running uv, you may need to add it to your PATH or use the full path to the executable.
 - Make sure both the Go application and the Python server are running for the integration to work properly.
 - **"API token not found" or "HTTP 401"**: start the bridge at least once so it creates `whatsapp-bridge/store/api_token`. If you set `WHATSAPP_API_TOKEN`, it must have the same value for the bridge and the MCP server.
-- **"media file must be inside one of these folders"**: move the file into `whatsapp-bridge/outbox`, or add its folder to `WHATSAPP_MEDIA_DIRS` and restart the bridge.
 
 ### Authentication Issues
 
