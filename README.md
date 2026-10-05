@@ -149,6 +149,7 @@ The MCP server supports both sending and receiving various media types:
 
 You can send various media types to your WhatsApp contacts:
 
+- **Where files must be**: For safety, the bridge only sends files from the `whatsapp-bridge/outbox` folder (created when the bridge starts). Copy files there before asking Claude to send them, or allow more folders with `WHATSAPP_MEDIA_DIRS` (see [Security](#security)).
 - **Images, Videos, Documents**: Use the `send_file` tool to share any supported media type.
 - **Voice Messages**: Use the `send_audio_message` tool to send audio files as playable WhatsApp voice messages.
   - For optimal compatibility, audio files should be in `.ogg` Opus format.
@@ -158,6 +159,24 @@ You can send various media types to your WhatsApp contacts:
 #### Media Downloading
 
 By default, just the metadata of the media is stored in the local database. The message will indicate that media was sent. To access this media you need to use the download_media tool which takes the `message_id` and `chat_jid` (which are shown when printing messages containing the meda), this downloads the media and then returns the file path which can be then opened or passed to another tool.
+
+## Security
+
+The bridge exposes a small REST API that the MCP server uses to send messages and download media. It is locked down as follows:
+
+- **Local only**: the API listens on `127.0.0.1:8080`, so other machines on your network cannot reach it.
+- **Token required**: on first start the bridge creates a random token in `whatsapp-bridge/store/api_token` (readable only by your user account). The MCP server reads it from there and sends it with every request; requests without it are refused. To use your own token instead, set the `WHATSAPP_API_TOKEN` environment variable to the same value for both the bridge and the MCP server (for the MCP server, add it under `"env"` in your Claude Desktop / Cursor config).
+- **JSON only**: requests must be sent as `application/json`, which stops web pages in your browser from sending requests to the bridge.
+- **Sending files is limited to chosen folders**: the bridge only sends files from `whatsapp-bridge/outbox`. To allow more folders, set `WHATSAPP_MEDIA_DIRS` when starting the bridge, separated like `PATH` (`:` on macOS/Linux, `;` on Windows):
+
+  ```bash
+  WHATSAPP_MEDIA_DIRS="$HOME/Pictures:$HOME/Documents/ToSend" go run main.go
+  ```
+
+  Files inside `whatsapp-bridge/store` (your session keys and message history) are never sent, even if a wider folder is allowed.
+- **Downloaded file names are sanitised**: media is saved as `<message id>_<name>` inside the chat's folder, so a file name chosen by the sender cannot place a file elsewhere on your computer.
+
+These measures do not stop prompt injection (see the caution at the top): a message you receive can still try to instruct Claude to send messages. Review what Claude proposes to send before approving tool calls.
 
 ## Technical Details
 
@@ -171,6 +190,8 @@ By default, just the metadata of the media is stored in the local database. The 
 
 - If you encounter permission issues when running uv, you may need to add it to your PATH or use the full path to the executable.
 - Make sure both the Go application and the Python server are running for the integration to work properly.
+- **"API token not found" or "HTTP 401"**: start the bridge at least once so it creates `whatsapp-bridge/store/api_token`. If you set `WHATSAPP_API_TOKEN`, it must have the same value for the bridge and the MCP server.
+- **"media file must be inside one of these folders"**: move the file into `whatsapp-bridge/outbox`, or add its folder to `WHATSAPP_MEDIA_DIRS` and restart the bridge.
 
 ### Authentication Issues
 
